@@ -40,7 +40,7 @@ jobs:
           chmod +x mvnw
           ./mvnw -B clean package -DskipTests
 
-            - name: Preparar conexión SSH
+      - name: Preparar conexión SSH
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_SSH_KEY_B64: ${{ secrets.EC2_SSH_KEY_B64 }}
@@ -55,12 +55,11 @@ jobs:
 
           chmod 600 ~/.ssh/ec2_key
 
-          # Verifica que el archivo sea una llave privada válida.
           ssh-keygen -y -f ~/.ssh/ec2_key > /dev/null
 
           ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
 
-          echo "Llave SSH preparada y validada correctamente."
+          echo "Llave SSH validada correctamente."
 
       - name: Crear archivo de variables
         env:
@@ -72,7 +71,7 @@ jobs:
           AZURE_B2C_JWK_SET_URI: ${{ secrets.AZURE_B2C_JWK_SET_URI }}
           AZURE_B2C_AUDIENCE: ${{ secrets.AZURE_B2C_AUDIENCE }}
         run: |
-          cat > /tmp/cloud.env <<EOF
+          cat > /tmp/cloud.env <<ENVEOF
           SPRING_PROFILES_ACTIVE=cloud
 
           PRODUCTOR_PORT=8080
@@ -97,7 +96,7 @@ jobs:
           AZURE_B2C_JWK_SET_URI=${AZURE_B2C_JWK_SET_URI}
           AZURE_B2C_AUDIENCE=${AZURE_B2C_AUDIENCE}
           AZURE_ROLE_CLAIM=extension_guiaRole
-          EOF
+          ENVEOF
 
           chmod 600 /tmp/cloud.env
 
@@ -136,6 +135,7 @@ jobs:
 
             PROJECT_DIR="$HOME/cloudnative/cloud_eft"
 
+            mkdir -p "$PROJECT_DIR"
             mkdir -p "$PROJECT_DIR/data-consumidor"
 
             cd "$PROJECT_DIR"
@@ -146,13 +146,14 @@ jobs:
             rm -f docker-compose.yml README.md README_SEGURIDAD_JWT.md
 
             tar -xzf /tmp/cloud_eft.tar.gz -C "$PROJECT_DIR"
+
             mv /tmp/cloud.env "$PROJECT_DIR/.env"
             chmod 600 "$PROJECT_DIR/.env"
 
             docker-compose up --build -d
 
             echo "Esperando el inicio de los servicios..."
-            sleep 40
+            sleep 45
 
             docker-compose ps
           REMOTE
@@ -164,17 +165,17 @@ jobs:
           ssh -i ~/.ssh/ec2_key ec2-user@"$EC2_HOST" <<'REMOTE'
             set -e
 
-            echo "Productor:"
+            echo "Verificando productor..."
             curl --fail --silent --show-error \
               http://localhost:8080/actuator/health
 
             echo
-            echo "Consumidor:"
+            echo "Verificando consumidor..."
             curl --fail --silent --show-error \
               http://localhost:8081/actuator/health
 
             echo
-            echo "Contenedores:"
+            echo "Estado de contenedores:"
             cd ~/cloudnative/cloud_eft
             docker-compose ps
 
