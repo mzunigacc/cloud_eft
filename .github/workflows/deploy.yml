@@ -51,10 +51,25 @@ jobs:
           test -n "$EC2_SSH_KEY_B64" || { echo "ERROR: EC2_SSH_KEY_B64 está vacío."; exit 1; }
 
           mkdir -p "$HOME/.ssh"
+
           printf '%s' "$EC2_SSH_KEY_B64" | base64 --decode > "$HOME/.ssh/ec2_key"
           chmod 600 "$HOME/.ssh/ec2_key"
+
           ssh-keygen -y -f "$HOME/.ssh/ec2_key" > /dev/null
-          ssh-keyscan -T 15 -H "$EC2_HOST" >> "$HOME/.ssh/known_hosts"
+
+          cat > "$HOME/.ssh/config" <<SSHCONFIG
+          Host ec2-target
+            HostName ${EC2_HOST}
+            User ec2-user
+            IdentityFile ${HOME}/.ssh/ec2_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+            ConnectTimeout 20
+          SSHCONFIG
+
+          chmod 600 "$HOME/.ssh/config"
+          ssh ec2-target "echo 'Conexión SSH validada correctamente.'"
 
       - name: Crear archivo de variables
         env:
@@ -70,20 +85,25 @@ jobs:
 
           cat > /tmp/cloud.env <<ENVEOF
           SPRING_PROFILES_ACTIVE=cloud
+
           PRODUCTOR_PORT=8080
           CONSUMIDOR_PORT=8081
+
           RABBITMQ_HOST=rabbitmq
           RABBITMQ_PORT=5672
           RABBITMQ_USERNAME=guias
           RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD}
+
           H2_URL=jdbc:h2:file:/app/data/guiasdb;AUTO_SERVER=TRUE
           H2_USERNAME=sa
           H2_PASSWORD=
+
           AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
           AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
           AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
           AWS_REGION=us-east-1
           AWS_S3_BUCKET=inscripcionesclouds4
+
           AZURE_B2C_ISSUER_URI=${AZURE_B2C_ISSUER_URI}
           AZURE_B2C_JWK_SET_URI=${AZURE_B2C_JWK_SET_URI}
           AZURE_B2C_AUDIENCE=${AZURE_B2C_AUDIENCE}
@@ -95,52 +115,67 @@ jobs:
       - name: Empaquetar proyecto
         run: |
           set -euo pipefail
-          tar --exclude='.git' --exclude='.github' --exclude='.env' --exclude='env.example' --exclude='data-consumidor' --exclude='.DS_Store' -czf /tmp/cloud_eft.tar.gz .
+          tar             --exclude='.git'             --exclude='.github'             --exclude='.env'             --exclude='env.example'             --exclude='data-consumidor'             --exclude='.DS_Store'             -czf /tmp/cloud_eft.tar.gz .
 
       - name: Copiar archivos a EC2
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
           set -euo pipefail
-          ssh -i "$HOME/.ssh/ec2_key" ec2-user@"$EC2_HOST" "mkdir -p ~/cloudnative/cloud_eft"
-          scp -i "$HOME/.ssh/ec2_key" /tmp/cloud_eft.tar.gz ec2-user@"$EC2_HOST":/tmp/cloud_eft.tar.gz
-          scp -i "$HOME/.ssh/ec2_key" /tmp/cloud.env ec2-user@"$EC2_HOST":/tmp/cloud.env
+          ssh ec2-target "mkdir -p ~/cloudnative/cloud_eft"
+          scp /tmp/cloud_eft.tar.gz ec2-target:/tmp/cloud_eft.tar.gz
+          scp /tmp/cloud.env ec2-target:/tmp/cloud.env
 
       - name: Desplegar con Docker Compose
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
           set -euo pipefail
-          ssh -i "$HOME/.ssh/ec2_key" ec2-user@"$EC2_HOST" <<'REMOTE'
+          ssh ec2-target <<'REMOTE'
             set -euo pipefail
+
             PROJECT_DIR="$HOME/cloudnative/cloud_eft"
+
+            mkdir -p "$PROJECT_DIR"
             mkdir -p "$PROJECT_DIR/data-consumidor"
+
             cd "$PROJECT_DIR"
+
             docker-compose down --remove-orphans || true
             docker rm -f guia-productor guia-consumidor rabbitmq-guias 2>/dev/null || true
+
             rm -rf guia-productor guia-consumidor
             rm -f docker-compose.yml README.md README_SEGURIDAD_JWT.md
+
             tar -xzf /tmp/cloud_eft.tar.gz -C "$PROJECT_DIR"
+
             mv /tmp/cloud.env "$PROJECT_DIR/.env"
             chmod 600 "$PROJECT_DIR/.env"
+
             docker-compose up --build -d
+
+            echo "Esperando el inicio de los servicios..."
             sleep 45
+
             docker-compose ps
           REMOTE
 
       - name: Verificar salud
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
           set -euo pipefail
-          ssh -i "$HOME/.ssh/ec2_key" ec2-user@"$EC2_HOST" <<'REMOTE'
+          ssh ec2-target <<'REMOTE'
             set -euo pipefail
+
+            echo "Verificando productor..."
             curl --fail --silent --show-error http://localhost:8080/actuator/health
+
             echo
+            echo "Verificando consumidor..."
             curl --fail --silent --show-error http://localhost:8081/actuator/health
+
             echo
+            echo "Estado de contenedores:"
             cd ~/cloudnative/cloud_eft
             docker-compose ps
+
+            echo
+            echo "Despliegue completado correctamente."
           REMOTE
 
       - name: Configurar credenciales AWS
@@ -156,16 +191,30 @@ jobs:
           EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
           set -euo pipefail
+
           API_ID="3nbunesv5k"
+
           aws sts get-caller-identity
-          aws apigatewayv2 get-integrations --api-id "$API_ID" --query "Items[?starts_with(IntegrationUri, 'http://')].[IntegrationId,IntegrationUri]" --output text |
+
+          aws apigatewayv2 get-integrations             --api-id "$API_ID"             --query "Items[?starts_with(IntegrationUri, 'http://')].[IntegrationId,IntegrationUri]"             --output text |
           while IFS=$'\t' read -r INTEGRATION_ID OLD_URI; do
             test -n "$INTEGRATION_ID" || continue
+
             NEW_URI=$(printf '%s' "$OLD_URI" | sed -E "s#^http://[^/:]+#http://${EC2_HOST}#")
-            aws apigatewayv2 update-integration --api-id "$API_ID" --integration-id "$INTEGRATION_ID" --integration-uri "$NEW_URI" > /dev/null
+
+            echo "${INTEGRATION_ID}: ${OLD_URI} -> ${NEW_URI}"
+
+            aws apigatewayv2 update-integration               --api-id "$API_ID"               --integration-id "$INTEGRATION_ID"               --integration-uri "$NEW_URI"               > /dev/null
           done
-          aws apigatewayv2 get-integrations --api-id "$API_ID" --query "Items[*].[IntegrationId,IntegrationMethod,IntegrationUri]" --output table
-          AUTO_DEPLOY=$(aws apigatewayv2 get-stage --api-id "$API_ID" --stage-name '$default' --query "AutoDeploy" --output text)
+
+          echo "Integraciones finales:"
+
+          aws apigatewayv2 get-integrations             --api-id "$API_ID"             --query "Items[*].[IntegrationId,IntegrationMethod,IntegrationUri]"             --output table
+
+          AUTO_DEPLOY=$(aws apigatewayv2 get-stage             --api-id "$API_ID"             --stage-name '$default'             --query "AutoDeploy"             --output text)
+
           if [ "$AUTO_DEPLOY" != "True" ] && [ "$AUTO_DEPLOY" != "true" ]; then
-            aws apigatewayv2 create-deployment --api-id "$API_ID" --stage-name '$default'
+            aws apigatewayv2 create-deployment               --api-id "$API_ID"               --stage-name '$default'
           fi
+
+          echo "API Gateway actualizado correctamente."
