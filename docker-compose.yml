@@ -1,0 +1,63 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: rabbitmq-guias
+    hostname: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guias
+      RABBITMQ_DEFAULT_PASS: guias123
+    volumes:
+      - rabbit_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  productor:
+    build: ./guia-productor
+    container_name: guia-productor
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-cloud}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USERNAME: guias
+      RABBITMQ_PASSWORD: guias123
+      AZURE_B2C_ISSUER_URI: ${AZURE_B2C_ISSUER_URI}
+      AZURE_B2C_JWK_SET_URI: ${AZURE_B2C_JWK_SET_URI}
+      AZURE_B2C_AUDIENCE: ${AZURE_B2C_AUDIENCE}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  consumidor:
+    build: ./guia-consumidor
+    container_name: guia-consumidor
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-cloud}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USERNAME: guias
+      RABBITMQ_PASSWORD: guias123
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-inscripcionesclouds4}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      H2_URL: "jdbc:h2:file:/app/data/guiasdb;AUTO_SERVER=TRUE"
+      AZURE_B2C_ISSUER_URI: ${AZURE_B2C_ISSUER_URI}
+      AZURE_B2C_JWK_SET_URI: ${AZURE_B2C_JWK_SET_URI}
+      AZURE_B2C_AUDIENCE: ${AZURE_B2C_AUDIENCE}
+    volumes:
+      - ./data-consumidor:/app/data
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+volumes:
+  rabbit_data:

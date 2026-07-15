@@ -1,0 +1,20 @@
+# Credenciales
+.env
+*.pem
+
+# Maven
+**/target/
+
+# H2 persistente
+data-consumidor/
+*.mv.db
+*.trace.db
+
+# Editores y sistema
+.DS_Store
+.vscode/
+.idea/
+
+# Logs
+*.log.env
+data-consumidor/*.db

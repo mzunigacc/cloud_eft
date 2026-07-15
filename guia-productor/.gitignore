@@ -1,0 +1,16 @@
+target/
+.idea/
+.vscode/
+.DS_Store
+*.iml
+data/
+data-consumidor/
+*.mv.db
+*.trace.db
+.env
+
+.env
+data/
+*.mv.db
+*.lock.db
+*.trace.db
