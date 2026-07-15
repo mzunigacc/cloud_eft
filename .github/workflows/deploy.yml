@@ -184,3 +184,72 @@ jobs:
             echo
             echo "Despliegue completado correctamente."
           REMOTE
+            
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v6.1.0
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+
+      - name: Actualizar integraciones de API Gateway
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          set -e
+
+          API_ID="3nbunesv5k"
+
+          echo "Validando credenciales AWS..."
+          aws sts get-caller-identity
+
+          echo "Integraciones actuales:"
+          aws apigatewayv2 get-integrations \
+            --api-id "$API_ID" \
+            --query "Items[*].[IntegrationId,IntegrationMethod,IntegrationUri]" \
+            --output table
+
+          echo "Actualizando integraciones con la IP ${EC2_HOST}..."
+
+          aws apigatewayv2 get-integrations \
+            --api-id "$API_ID" \
+            --query "Items[?starts_with(IntegrationUri, 'http://')].[IntegrationId,IntegrationUri]" \
+            --output text |
+          while IFS=$'\t' read -r INTEGRATION_ID OLD_URI; do
+
+            NEW_URI=$(printf '%s' "$OLD_URI" |
+              sed -E "s#^http://[^/:]+#http://${EC2_HOST}#")
+
+            echo "${INTEGRATION_ID}: ${OLD_URI}"
+            echo "                    -> ${NEW_URI}"
+
+            aws apigatewayv2 update-integration \
+              --api-id "$API_ID" \
+              --integration-id "$INTEGRATION_ID" \
+              --integration-uri "$NEW_URI"
+          done
+
+          echo "Integraciones actualizadas:"
+
+          aws apigatewayv2 get-integrations \
+            --api-id "$API_ID" \
+            --query "Items[*].[IntegrationId,IntegrationMethod,IntegrationUri]" \
+            --output table
+
+          AUTO_DEPLOY=$(aws apigatewayv2 get-stage \
+            --api-id "$API_ID" \
+            --stage-name '$default' \
+            --query "AutoDeploy" \
+            --output text)
+
+          if [ "$AUTO_DEPLOY" != "True" ] && [ "$AUTO_DEPLOY" != "true" ]; then
+            echo "Auto-deploy desactivado. Creando despliegue..."
+            aws apigatewayv2 create-deployment \
+              --api-id "$API_ID" \
+              --stage-name '$default'
+          else
+            echo "Auto-deploy está activado."
+          fi
+
+          echo "API Gateway actualizado correctamente."
