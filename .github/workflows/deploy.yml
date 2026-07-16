@@ -40,7 +40,7 @@ jobs:
           chmod +x mvnw
           ./mvnw -B clean package -DskipTests
 
-      - name: Preparar conexión SSH
+      - name: Preparar conexión SSH con reintentos
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_SSH_KEY_B64: ${{ secrets.EC2_SSH_KEY_B64 }}
@@ -54,7 +54,6 @@ jobs:
 
           printf '%s' "$EC2_SSH_KEY_B64" | base64 --decode > "$HOME/.ssh/ec2_key"
           chmod 600 "$HOME/.ssh/ec2_key"
-
           ssh-keygen -y -f "$HOME/.ssh/ec2_key" > /dev/null
 
           cat > "$HOME/.ssh/config" <<SSHCONFIG
@@ -65,13 +64,25 @@ jobs:
             IdentitiesOnly yes
             StrictHostKeyChecking no
             UserKnownHostsFile /dev/null
-            ConnectTimeout 20
+            ConnectTimeout 60
+            ConnectionAttempts 3
             ServerAliveInterval 15
-            ServerAliveCountMax 4
+            ServerAliveCountMax 8
           SSHCONFIG
 
           chmod 600 "$HOME/.ssh/config"
-          ssh ec2-target "echo 'Conexión SSH validada correctamente.'"
+
+          echo "Esperando disponibilidad de SSH..."
+          for intento in 1 2 3 4 5 6 7 8; do
+            echo "Intento SSH ${intento}/8"
+            if timeout 75 ssh ec2-target "echo 'Conexión SSH validada correctamente.'"; then
+              exit 0
+            fi
+            sleep 20
+          done
+
+          echo "ERROR: EC2 no respondió por SSH después de 8 intentos."
+          exit 1
 
       - name: Crear archivo de variables
         env:
@@ -119,44 +130,64 @@ jobs:
           set -euo pipefail
           tar             --exclude='.git'             --exclude='.github'             --exclude='.env'             --exclude='env.example'             --exclude='data-consumidor'             --exclude='.DS_Store'             -czf /tmp/cloud_eft.tar.gz .
 
-      - name: Copiar archivos a EC2
+      - name: Copiar archivos a EC2 con reintentos
         run: |
           set -euo pipefail
-          ssh ec2-target "mkdir -p ~/cloudnative/cloud_eft"
-          scp /tmp/cloud_eft.tar.gz ec2-target:/tmp/cloud_eft.tar.gz
-          scp /tmp/cloud.env ec2-target:/tmp/cloud.env
+
+          for intento in 1 2 3 4 5; do
+            echo "Intento de copia ${intento}/5"
+            if ssh ec2-target "mkdir -p ~/cloudnative/cloud_eft"               && scp /tmp/cloud_eft.tar.gz ec2-target:/tmp/cloud_eft.tar.gz               && scp /tmp/cloud.env ec2-target:/tmp/cloud.env; then
+              exit 0
+            fi
+            sleep 20
+          done
+
+          echo "ERROR: No fue posible copiar los archivos a EC2."
+          exit 1
 
       - name: Desplegar con Docker Compose
         run: |
           set -euo pipefail
-          ssh ec2-target <<'REMOTE'
-            set -euo pipefail
 
-            PROJECT_DIR="$HOME/cloudnative/cloud_eft"
+          for intento in 1 2 3; do
+            echo "Intento de despliegue ${intento}/3"
 
-            mkdir -p "$PROJECT_DIR"
-            mkdir -p "$PROJECT_DIR/data-consumidor"
+            if ssh ec2-target <<'REMOTE'
+              set -euo pipefail
 
-            cd "$PROJECT_DIR"
+              PROJECT_DIR="$HOME/cloudnative/cloud_eft"
 
-            docker-compose down --remove-orphans || true
-            docker rm -f guia-productor guia-consumidor rabbitmq-guias 2>/dev/null || true
+              mkdir -p "$PROJECT_DIR"
+              mkdir -p "$PROJECT_DIR/data-consumidor"
 
-            rm -rf guia-productor guia-consumidor
-            rm -f docker-compose.yml README.md README_SEGURIDAD_JWT.md
+              cd "$PROJECT_DIR"
 
-            tar -xzf /tmp/cloud_eft.tar.gz -C "$PROJECT_DIR"
+              docker-compose down --remove-orphans || true
+              docker rm -f guia-productor guia-consumidor rabbitmq-guias 2>/dev/null || true
 
-            mv /tmp/cloud.env "$PROJECT_DIR/.env"
-            chmod 600 "$PROJECT_DIR/.env"
+              rm -rf guia-productor guia-consumidor
+              rm -f docker-compose.yml README.md README_SEGURIDAD_JWT.md
 
-            docker-compose up --build -d
+              tar -xzf /tmp/cloud_eft.tar.gz -C "$PROJECT_DIR"
 
-            echo "Esperando el inicio de los servicios..."
-            sleep 45
+              mv /tmp/cloud.env "$PROJECT_DIR/.env"
+              chmod 600 "$PROJECT_DIR/.env"
 
-            echo "Despliegue Docker ejecutado."
+              docker-compose up --build -d
+
+              echo "Esperando el inicio de los servicios..."
+              sleep 45
+              echo "Despliegue Docker ejecutado."
           REMOTE
+            then
+              exit 0
+            fi
+
+            sleep 25
+          done
+
+          echo "ERROR: El despliegue remoto no pudo completarse."
+          exit 1
 
       - name: Verificar salud
         env:
@@ -165,11 +196,11 @@ jobs:
           set -euo pipefail
 
           echo "Verificando productor..."
-          curl --retry 12                --retry-delay 5                --retry-connrefused                --fail                --silent                --show-error                "http://${EC2_HOST}:8080/actuator/health"
+          curl --retry 15                --retry-delay 5                --retry-connrefused                --fail                --silent                --show-error                "http://${EC2_HOST}:8080/actuator/health"
 
           echo
           echo "Verificando consumidor..."
-          curl --retry 12                --retry-delay 5                --retry-connrefused                --fail                --silent                --show-error                "http://${EC2_HOST}:8081/actuator/health"
+          curl --retry 15                --retry-delay 5                --retry-connrefused                --fail                --silent                --show-error                "http://${EC2_HOST}:8081/actuator/health"
 
           echo
           echo "Ambos microservicios respondieron UP."
@@ -177,7 +208,7 @@ jobs:
       - name: Mostrar estado de contenedores
         continue-on-error: true
         run: |
-          ssh ec2-target "cd ~/cloudnative/cloud_eft && docker-compose ps" ||             echo "Advertencia: no fue posible mostrar docker-compose ps, pero los health checks fueron exitosos."
+          timeout 90 ssh ec2-target             "cd ~/cloudnative/cloud_eft && docker-compose ps" ||             echo "Advertencia: no fue posible mostrar docker-compose ps."
 
       - name: Configurar credenciales AWS
         uses: aws-actions/configure-aws-credentials@v4
