@@ -66,6 +66,8 @@ jobs:
             StrictHostKeyChecking no
             UserKnownHostsFile /dev/null
             ConnectTimeout 20
+            ServerAliveInterval 15
+            ServerAliveCountMax 4
           SSHCONFIG
 
           chmod 600 "$HOME/.ssh/config"
@@ -153,30 +155,29 @@ jobs:
             echo "Esperando el inicio de los servicios..."
             sleep 45
 
-            docker-compose ps
+            echo "Despliegue Docker ejecutado."
           REMOTE
 
       - name: Verificar salud
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
           set -euo pipefail
-          ssh ec2-target <<'REMOTE'
-            set -euo pipefail
 
-            echo "Verificando productor..."
-            curl --fail --silent --show-error http://localhost:8080/actuator/health
+          echo "Verificando productor..."
+          curl --retry 12                --retry-delay 5                --retry-connrefused                --fail                --silent                --show-error                "http://${EC2_HOST}:8080/actuator/health"
 
-            echo
-            echo "Verificando consumidor..."
-            curl --fail --silent --show-error http://localhost:8081/actuator/health
+          echo
+          echo "Verificando consumidor..."
+          curl --retry 12                --retry-delay 5                --retry-connrefused                --fail                --silent                --show-error                "http://${EC2_HOST}:8081/actuator/health"
 
-            echo
-            echo "Estado de contenedores:"
-            cd ~/cloudnative/cloud_eft
-            docker-compose ps
+          echo
+          echo "Ambos microservicios respondieron UP."
 
-            echo
-            echo "Despliegue completado correctamente."
-          REMOTE
+      - name: Mostrar estado de contenedores
+        continue-on-error: true
+        run: |
+          ssh ec2-target "cd ~/cloudnative/cloud_eft && docker-compose ps" ||             echo "Advertencia: no fue posible mostrar docker-compose ps, pero los health checks fueron exitosos."
 
       - name: Configurar credenciales AWS
         uses: aws-actions/configure-aws-credentials@v4
