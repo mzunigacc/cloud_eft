@@ -1,0 +1,173 @@
+{
+  "info": {
+    "_postman_id": "8a67f69c-1d3b-4ccc-a4d1-descargascloud",
+    "name": "Cloud EFT - Rol Descargas",
+    "description": "Ejecute después de Gestión. Usa la variable numero_guia creada por la colección anterior.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token_descargas}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "01 - Descargar archivo con rol descargas",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/guias/{{numero_guia}}/download",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "guias",
+            "{{numero_guia}}",
+            "download"
+          ]
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Descarga autorizada\", function () { pm.response.to.have.status(200); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 - Intentar crear guía (403)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/guias",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "guias"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"numeroGuia\": \"GD-DESCARGAS-NO-PERMITIDO\",\n  \"transportista\": \"{{transportista}}\",\n  \"fecha\": \"{{fecha}}\",\n  \"origen\": \"Iquique\",\n  \"destino\": \"Arica\",\n  \"destinatario\": \"Prueba de rol\",\n  \"descripcionPedido\": \"Operación no permitida\",\n  \"cantidadBultos\": 1\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Rol descargas no puede crear\", function () { pm.response.to.have.status(403); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 - Intentar consultar guía (403)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/guias/{{numero_guia}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "guias",
+            "{{numero_guia}}"
+          ]
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Rol descargas no puede consultar\", function () { pm.response.to.have.status(403); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 - Descargar sin token (401)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/guias/{{numero_guia}}/download",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "guias",
+            "{{numero_guia}}",
+            "download"
+          ]
+        },
+        "auth": {
+          "type": "noauth"
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Sin token devuelve 401\", function () { pm.response.to.have.status(401); });"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

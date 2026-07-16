@@ -1,0 +1,371 @@
+{
+  "info": {
+    "_postman_id": "b4050b2f-7aa7-4a45-a4d1-gestioncloud",
+    "name": "Cloud EFT - Rol Gestión",
+    "description": "Ejecute esta colección primero. Deja una guía principal disponible para la colección del rol Descargas.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token_gestion}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "01 - Crear guía principal",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/guias",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "guias"
+          ]
+        },
+        "description": "Después del 202, espere unos segundos y revise el bucket S3 para mostrar el archivo generado.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"numeroGuia\": \"{{numero_guia}}\",\n  \"transportista\": \"{{transportista}}\",\n  \"fecha\": \"{{fecha}}\",\n  \"origen\": \"Iquique\",\n  \"destino\": \"Antofagasta\",\n  \"destinatario\": \"Empresa Demo\",\n  \"descripcionPedido\": \"Prueba CI/CD y generación de archivo S3\",\n  \"cantidadBultos\": 5\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const n = \"GD-POSTMAN-\" + Date.now();",
+              "pm.environment.set(\"numero_guia\", n);",
+              "console.log(\"Guía principal:\", n);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Estado 202 Accepted\", function () { pm.response.to.have.status(202); });",
+              "pm.test(\"Respuesta contiene numeroGuia\", function () { const j = pm.response.json(); pm.expect(j.numeroGuia).to.exist; });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 - Consultar guía principal",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/guias/{{numero_guia}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "guias",
+            "{{numero_guia}}"
+          ]
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Estado 200 OK\", function () { pm.response.to.have.status(200); });",
+              "pm.test(\"La guía coincide\", function () { const j = pm.response.json(); pm.expect(j.numeroGuia).to.eql(pm.environment.get(\"numero_guia\")); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 - Listar guías por filtros",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/guias?transportista={{transportista_url}}&fecha={{fecha}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "guias"
+          ],
+          "query": [
+            {
+              "key": "transportista",
+              "value": "{{transportista_url}}"
+            },
+            {
+              "key": "fecha",
+              "value": "{{fecha}}"
+            }
+          ]
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Estado 200 OK\", function () { pm.response.to.have.status(200); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 - Actualizar guía principal",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/guias/{{numero_guia}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "guias",
+            "{{numero_guia}}"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"numeroGuia\": \"{{numero_guia}}\",\n  \"transportista\": \"{{transportista}}\",\n  \"fecha\": \"{{fecha}}\",\n  \"origen\": \"Iquique\",\n  \"destino\": \"Calama\",\n  \"destinatario\": \"Empresa Demo Actualizada\",\n  \"descripcionPedido\": \"Guía modificada mediante Postman\",\n  \"cantidadBultos\": 8\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Actualización exitosa\", function () { pm.expect([200, 204]).to.include(pm.response.code); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 - Descargar archivo de la guía",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/guias/{{numero_guia}}/download",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "guias",
+            "{{numero_guia}}",
+            "download"
+          ]
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Descarga autorizada\", function () { pm.response.to.have.status(200); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 - Crear guía temporal para DELETE",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/guias",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "guias"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"numeroGuia\": \"{{numero_guia_eliminar}}\",\n  \"transportista\": \"{{transportista}}\",\n  \"fecha\": \"{{fecha}}\",\n  \"origen\": \"Iquique\",\n  \"destino\": \"Arica\",\n  \"destinatario\": \"Cliente Eliminación\",\n  \"descripcionPedido\": \"Guía temporal para validar DELETE\",\n  \"cantidadBultos\": 1\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const n = \"GD-DELETE-\" + Date.now();",
+              "pm.environment.set(\"numero_guia_eliminar\", n);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Estado 202 Accepted\", function () { pm.response.to.have.status(202); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 - Eliminar guía temporal",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/guias/{{numero_guia_eliminar}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "guias",
+            "{{numero_guia_eliminar}}"
+          ]
+        },
+        "description": "Elimina la guía temporal y conserva la guía principal para las pruebas del rol Descargas."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Eliminación exitosa\", function () { pm.expect([200, 204]).to.include(pm.response.code); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "08 - Crear guía sin token (401)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/guias",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "guias"
+          ]
+        },
+        "auth": {
+          "type": "noauth"
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"numeroGuia\": \"GD-SIN-TOKEN\",\n  \"transportista\": \"{{transportista}}\",\n  \"fecha\": \"{{fecha}}\",\n  \"origen\": \"Iquique\",\n  \"destino\": \"Arica\",\n  \"destinatario\": \"Prueba\",\n  \"descripcionPedido\": \"Prueba 401\",\n  \"cantidadBultos\": 1\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Sin token devuelve 401\", function () { pm.response.to.have.status(401); });"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
